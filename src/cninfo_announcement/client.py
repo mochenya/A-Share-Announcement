@@ -193,6 +193,7 @@ class CNInfoClient:
             self._client,
             announcement,
             save_dir=save_dir,
+            retries=self.retries,
         )
 
     def _build_announcement_payload(

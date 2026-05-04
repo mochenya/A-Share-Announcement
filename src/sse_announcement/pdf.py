@@ -12,6 +12,8 @@ if __package__ in (None, ""):
 import httpx
 
 from announcement_common.filename import build_pdf_filename
+from announcement_common.pdf import is_existing_pdf, write_pdf_atomic
+from sse_announcement.config import DEFAULT_RETRIES
 from sse_announcement.models import (
     BusinessAnnouncement,
     SSEBulletinFile,
@@ -43,19 +45,22 @@ def _download_pdf_with_client(
     announcement: AnnouncementWithPdf,
     *,
     save_dir: str | Path | None = None,
+    retries: int = DEFAULT_RETRIES,
 ) -> Path:
     from sse_announcement.client import _get_pdf_response
 
     target_dir = _resolve_save_dir(save_dir)
     target_path = target_dir / _derive_pdf_filename(announcement)
     if target_path.is_file():
-        # workflow 重试时会反复进入下载阶段；本地已有 PDF 就直接复用，避免重复
-        # 触发上交所 static 域名的 challenge 和限流。
-        return target_path
+        if is_existing_pdf(target_path):
+            # workflow 重试时会反复进入下载阶段；本地已有 PDF 就直接复用，避免重复
+            # 触发上交所 static 域名的 challenge 和限流。
+            return target_path
+        # 旧版本可能把挑战页或 HTML 错误页保存成 .pdf；损坏文件不应继续复用。
+        target_path.unlink()
 
-    response = _get_pdf_response(client, build_pdf_url(announcement))
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(response.content)
+    response = _get_pdf_response(client, build_pdf_url(announcement), retries=retries)
+    write_pdf_atomic(target_path, response.content)
     return target_path
 
 

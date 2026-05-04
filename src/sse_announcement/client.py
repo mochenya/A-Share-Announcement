@@ -23,6 +23,7 @@ from announcement_common.http import (
     should_retry_status,
 )
 from announcement_common.models import AnnouncementSource
+from announcement_common.pdf import is_pdf_response
 from sse_announcement.config import (
     DEFAULT_LIMITS,
     DEFAULT_RETRIES,
@@ -291,6 +292,7 @@ class SSEAnnouncementClient:
             self._client,
             announcement,
             save_dir=save_dir,
+            retries=self.retries,
         )
 
     def _build_query_params(
@@ -448,28 +450,70 @@ def _decode_query_json(response: httpx.Response) -> Any:
         raise SSEUnexpectedResponseError("SSE returned non-JSON data") from exc
 
 
-def _get_pdf_response(client: httpx.Client, url: str) -> httpx.Response:
+def _get_pdf_response(
+    client: httpx.Client,
+    url: str,
+    *,
+    retries: int = DEFAULT_RETRIES,
+) -> httpx.Response:
+    attempts = retries + 1
+    last_error: Exception | None = None
+    retry_after: str | None = None
+    for attempt in range(attempts):
+        retry_after = None
+        try:
+            return _get_pdf_response_once(client, url)
+        except (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.ProtocolError,
+        ) as exc:
+            last_error = exc
+        except SSERateLimitError as exc:
+            retry_after = _extract_retry_after(exc)
+            last_error = exc
+        if attempt < attempts - 1:
+            sleep(retry_delay_seconds(attempt, retry_after))
+    if last_error is None:
+        raise SSEAnnouncementError("SSE PDF request failed")
+    raise SSEAnnouncementError("SSE PDF request failed after retries") from last_error
+
+
+def _get_pdf_response_once(client: httpx.Client, url: str) -> httpx.Response:
     response = client.get(url, headers=_build_pdf_headers(client))
-    if _is_pdf_response(response):
+    if is_pdf_response(response):
         return response
+    _raise_for_retryable_pdf_status(response)
     # PDF 首次请求可能返回挑战页；解出 acw_sc__v2 后必须用同一个 client 保留
     # cookie 再请求一次。
     _solve_acw_challenge(client, response)
     response = client.get(url, headers=_build_pdf_headers(client))
-    if not _is_pdf_response(response):
-        content_type = response.headers.get("content-type")
-        raise SSEUnexpectedResponseError(
-            f"SSE PDF request did not return a PDF: {content_type}"
-        )
-    return response
+    if is_pdf_response(response):
+        return response
+    _raise_for_retryable_pdf_status(response)
+    content_type = response.headers.get("content-type")
+    raise SSEUnexpectedResponseError(
+        f"SSE PDF request did not return a PDF: {content_type}"
+    )
 
 
 def _is_pdf_response(response: httpx.Response) -> bool:
-    content_type = response.headers.get("content-type", "")
-    return response.status_code == 200 and (
-        response.content.startswith(b"%PDF-")
-        or content_type.startswith("application/pdf")
+    return is_pdf_response(response)
+
+
+def _raise_for_retryable_pdf_status(response: httpx.Response) -> None:
+    if not should_retry_status(response.status_code):
+        response.raise_for_status()
+        return
+    error = SSERateLimitError(
+        f"SSE PDF request failed with status {response.status_code}"
     )
+    error.retry_after = response.headers.get("Retry-After")
+    raise error
+
+
+def _extract_retry_after(error: SSERateLimitError) -> str | None:
+    return getattr(error, "retry_after", None)
 
 
 def _build_pdf_headers(client: httpx.Client) -> dict[str, str]:
