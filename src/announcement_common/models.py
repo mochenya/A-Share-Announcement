@@ -13,6 +13,7 @@ TResponse = TypeVar("TResponse")
 class AnnouncementSource(StrEnum):
     CNINFO = "cninfo"
     SSE = "sse"
+    SZSE = "szse"
 
 
 class BusinessAnnouncement(BaseModel):

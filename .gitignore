@@ -29,6 +29,7 @@ htmlcov/
 /data/pdf/
 /data/cninfo_pdf/
 /data/sse_pdf/
+/data/szse_pdf/
 
 # Local editor and OS files
 .idea/

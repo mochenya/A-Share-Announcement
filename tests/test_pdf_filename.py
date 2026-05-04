@@ -17,6 +17,11 @@ from sse_announcement.pdf import _derive_pdf_filename as derive_sse_pdf_filename
 from sse_announcement.pdf import (
     _download_pdf_with_client as download_sse_pdf_with_client,
 )
+from szse_announcement.models import SZSEAnnouncementRecord
+from szse_announcement.pdf import _derive_pdf_filename as derive_szse_pdf_filename
+from szse_announcement.pdf import (
+    _download_pdf_with_client as download_szse_pdf_with_client,
+)
 
 
 def test_cninfo_pdf_filename_accepts_standard_and_raw_models() -> None:
@@ -50,6 +55,23 @@ def test_sse_pdf_filename_accepts_standard_and_raw_models() -> None:
 
     assert derive_sse_pdf_filename(standard) == "sse60000020260101ABCD - 公告测试.pdf"
     assert derive_sse_pdf_filename(raw) == "sse60000020260101ABCD - 公告测试.pdf"
+
+
+def test_szse_pdf_filename_accepts_standard_and_raw_models() -> None:
+    standard = BusinessAnnouncement(
+        source=AnnouncementSource.SZSE,
+        announcement_id="1225269298",
+        announcement_title="公告测试",
+        adjunct_url="/disc/disk03/finalpage/2026-04-30/test.PDF",
+    )
+    raw = SZSEAnnouncementRecord(
+        annId=1225269298,
+        title="公告测试",
+        attachPath="/disc/disk03/finalpage/2026-04-30/test.PDF",
+    )
+
+    assert derive_szse_pdf_filename(standard) == "1225269298 - 公告测试.pdf"
+    assert derive_szse_pdf_filename(raw) == "1225269298 - 公告测试.pdf"
 
 
 def test_cninfo_pdf_download_writes_pdf_file(tmp_path: Path) -> None:
@@ -103,4 +125,31 @@ def test_sse_pdf_download_writes_pdf_file(tmp_path: Path) -> None:
     assert requested_urls == [
         "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/"
         "600000_20260101_ABCD.pdf"
+    ]
+
+
+def test_szse_pdf_download_writes_pdf_file(tmp_path: Path) -> None:
+    announcement = SZSEAnnouncementRecord(
+        annId=1225269298,
+        title="公告测试",
+        attachPath="/disc/disk03/finalpage/2026-04-30/test.PDF",
+    )
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            200,
+            content=b"%PDF-szse",
+            headers={"content-type": "application/pdf"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        path = download_szse_pdf_with_client(client, announcement, save_dir=tmp_path)
+
+    assert path == tmp_path / "1225269298 - 公告测试.pdf"
+    assert path.read_bytes() == b"%PDF-szse"
+    assert requested_urls == [
+        "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-04-30/test.PDF"
     ]

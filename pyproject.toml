@@ -1,7 +1,7 @@
 [project]
 name = "a-share-announcement"
 version = "0.1.0"
-description = "Shared CNInfo and SSE announcement clients."
+description = "Shared CNInfo, SSE, and SZSE announcement clients."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
@@ -13,6 +13,7 @@ keywords = [
     "announcement",
     "cninfo",
     "sse",
+    "szse",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -44,6 +45,7 @@ packages = [
     "src/announcement_common",
     "src/cninfo_announcement",
     "src/sse_announcement",
+    "src/szse_announcement",
 ]
 
 [tool.ruff]
