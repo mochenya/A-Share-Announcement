@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+import httpx
 import pytest
 
 from announcement_common.models import AnnouncementSource
@@ -148,3 +149,41 @@ def test_sse_limit_uses_incremental_deduplication(
         "ssetest1",
         "ssetest2",
     ]
+
+
+def test_sse_retry_respects_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SSEAnnouncementClient(verify=False, retries=1)
+    responses = [
+        httpx.Response(
+            429,
+            headers={"Retry-After": "3"},
+            request=httpx.Request("GET", QUERY_URL),
+        ),
+        httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("GET", QUERY_URL),
+        ),
+    ]
+    delays: list[float] = []
+
+    def get(_url: str, *, params: dict[str, str]) -> httpx.Response:
+        assert params == {"pageHelp.pageNo": "1"}
+        return responses.pop(0)
+
+    monkeypatch.setattr(client._client, "get", get)
+    monkeypatch.setattr("sse_announcement.client.sleep", delays.append)
+
+    try:
+        result = client._get_with_retry(
+            QUERY_URL,
+            params={"pageHelp.pageNo": "1"},
+            parse=lambda raw: raw,
+        )
+    finally:
+        client.close()
+
+    assert result == {"ok": True}
+    assert delays == [3.0]

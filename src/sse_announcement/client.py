@@ -20,6 +20,7 @@ from announcement_common.http import (
     build_headers_with_user_agent,
     create_http_client,
     retry_delay_seconds,
+    should_retry_status,
 )
 from announcement_common.models import AnnouncementSource
 from sse_announcement.config import (
@@ -324,10 +325,13 @@ class SSEAnnouncementClient:
     ) -> T:
         attempts = self.retries + 1
         last_error: Exception | None = None
+        retry_after: str | None = None
         for attempt in range(attempts):
+            retry_after = None
             try:
                 response = self._client.get(url, params=params)
-                if response.status_code >= 500:
+                if should_retry_status(response.status_code):
+                    retry_after = response.headers.get("Retry-After")
                     raise SSERateLimitError(
                         f"SSE request failed with status {response.status_code}"
                     )
@@ -342,7 +346,7 @@ class SSEAnnouncementClient:
             except SSERateLimitError as exc:
                 last_error = exc
             if attempt < attempts - 1:
-                sleep(retry_delay_seconds(attempt))
+                sleep(retry_delay_seconds(attempt, retry_after))
         if last_error is None:
             raise SSEAnnouncementError("SSE request failed")
         raise SSEAnnouncementError("SSE request failed after retries") from last_error

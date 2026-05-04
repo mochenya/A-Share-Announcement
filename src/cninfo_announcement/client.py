@@ -18,6 +18,7 @@ from announcement_common.http import (
     VerifyTypes,
     create_http_client,
     retry_delay_seconds,
+    should_retry_status,
 )
 from announcement_common.models import AnnouncementSource
 from cninfo_announcement.config import (
@@ -256,10 +257,13 @@ class CNInfoClient:
     ) -> T:
         attempts = self.retries + 1
         last_error: Exception | None = None
+        retry_after: str | None = None
         for attempt in range(attempts):
+            retry_after = None
             try:
                 response = self._client.post(url, data=data)
-                if response.status_code >= 500:
+                if should_retry_status(response.status_code):
+                    retry_after = response.headers.get("Retry-After")
                     raise CNInfoError(
                         f"CNInfo request failed with status {response.status_code}"
                     )
@@ -274,7 +278,7 @@ class CNInfoClient:
             except httpx.HTTPStatusError:
                 raise
             if attempt < attempts - 1:
-                sleep(retry_delay_seconds(attempt))
+                sleep(retry_delay_seconds(attempt, retry_after))
         if last_error is None:
             raise CNInfoError("CNInfo request failed")
         raise CNInfoError("CNInfo request failed after retries") from last_error

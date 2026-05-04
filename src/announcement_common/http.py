@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ssl
 from collections.abc import Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from ssl import SSLContext
 from typing import Any
 
@@ -11,6 +13,7 @@ import truststore
 VerifyTypes = bool | str | SSLContext
 RETRY_BASE_DELAY_SECONDS = 0.5
 RETRY_MAX_DELAY_SECONDS = 4.0
+RETRY_AFTER_MAX_DELAY_SECONDS = 60.0
 
 
 def default_verify_context() -> SSLContext:
@@ -18,8 +21,35 @@ def default_verify_context() -> SSLContext:
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
-def retry_delay_seconds(attempt: int) -> float:
+def retry_delay_seconds(attempt: int, retry_after: str | None = None) -> float:
+    retry_after_delay = parse_retry_after_seconds(retry_after)
+    if retry_after_delay is not None:
+        return retry_after_delay
     return min(RETRY_BASE_DELAY_SECONDS * (2**attempt), RETRY_MAX_DELAY_SECONDS)
+
+
+def parse_retry_after_seconds(value: str | None) -> float | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        delay = float(normalized)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(normalized)
+        except TypeError, ValueError:
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        delay = (retry_at - datetime.now(UTC)).total_seconds()
+    # Retry-After 是上游明确要求的冷却时间；做上限保护，避免单次请求意外挂住过久。
+    return min(max(delay, 0.0), RETRY_AFTER_MAX_DELAY_SECONDS)
+
+
+def should_retry_status(status_code: int) -> bool:
+    return status_code == 429 or status_code >= 500
 
 
 def normalize_user_agent(value: str | None, default: str) -> str:

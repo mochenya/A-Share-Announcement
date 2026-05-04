@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+import httpx
 import pytest
 
 from announcement_common.models import AnnouncementSource
@@ -188,3 +189,47 @@ def test_szse_limit_marks_current_page_truncation(
     assert result.response.total_announcement == 2
     assert result.response.has_more is True
     assert [item.announcement_id for item in result.items] == ["1", "2"]
+
+
+def test_szse_retry_respects_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SZSEAnnouncementClient(verify=False, retries=1)
+    responses = [
+        httpx.Response(
+            429,
+            headers={"Retry-After": "4"},
+            request=httpx.Request("POST", QUERY_URL),
+        ),
+        httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("POST", QUERY_URL),
+        ),
+    ]
+    delays: list[float] = []
+
+    def post(
+        _url: str,
+        *,
+        params: dict[str, str],
+        content: bytes,
+    ) -> httpx.Response:
+        assert "random" in params
+        assert content == b'{"pageNum": 1}'
+        return responses.pop(0)
+
+    monkeypatch.setattr(client._client, "post", post)
+    monkeypatch.setattr("szse_announcement.client.sleep", delays.append)
+
+    try:
+        result = client._post_with_retry(
+            QUERY_URL,
+            data={"pageNum": 1},
+            parse=lambda raw: raw,
+        )
+    finally:
+        client.close()
+
+    assert result == {"ok": True}
+    assert delays == [4.0]

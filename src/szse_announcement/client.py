@@ -20,6 +20,7 @@ from announcement_common.http import (
     build_headers_with_user_agent,
     create_http_client,
     retry_delay_seconds,
+    should_retry_status,
 )
 from announcement_common.models import AnnouncementSource
 from szse_announcement.config import (
@@ -227,14 +228,17 @@ class SZSEAnnouncementClient:
     ) -> T:
         attempts = self.retries + 1
         last_error: Exception | None = None
+        retry_after: str | None = None
         for attempt in range(attempts):
+            retry_after = None
             try:
                 response = self._client.post(
                     url,
                     params={"random": f"{random.random():.16f}"},
                     content=json.dumps(data, ensure_ascii=False).encode("utf-8"),
                 )
-                if response.status_code >= 500:
+                if should_retry_status(response.status_code):
+                    retry_after = response.headers.get("Retry-After")
                     raise SZSEAnnouncementError(
                         f"SZSE request failed with status {response.status_code}"
                     )
@@ -249,7 +253,7 @@ class SZSEAnnouncementClient:
             except SZSEAnnouncementError as exc:
                 last_error = exc
             if attempt < attempts - 1:
-                sleep(retry_delay_seconds(attempt))
+                sleep(retry_delay_seconds(attempt, retry_after))
         if last_error is None:
             raise SZSEAnnouncementError("SZSE request failed")
         raise SZSEAnnouncementError("SZSE request failed after retries") from last_error

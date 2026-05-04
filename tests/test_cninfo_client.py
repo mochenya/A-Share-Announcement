@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+import httpx
 import pytest
 
 from announcement_common.models import AnnouncementSource
@@ -133,3 +134,41 @@ def test_cninfo_query_rejects_reversed_date_range(
             )
     finally:
         client.close()
+
+
+def test_cninfo_retry_respects_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = CNInfoClient(verify=False, retries=1)
+    responses = [
+        httpx.Response(
+            429,
+            headers={"Retry-After": "2"},
+            request=httpx.Request("POST", ANNOUNCEMENT_URL),
+        ),
+        httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("POST", ANNOUNCEMENT_URL),
+        ),
+    ]
+    delays: list[float] = []
+
+    def post(_url: str, *, data: dict[str, str]) -> httpx.Response:
+        assert data == {"pageNum": "1"}
+        return responses.pop(0)
+
+    monkeypatch.setattr(client._client, "post", post)
+    monkeypatch.setattr("cninfo_announcement.client.sleep", delays.append)
+
+    try:
+        result = client._post_with_retry(
+            ANNOUNCEMENT_URL,
+            data={"pageNum": "1"},
+            parse=lambda raw: raw,
+        )
+    finally:
+        client.close()
+
+    assert result == {"ok": True}
+    assert delays == [2.0]
