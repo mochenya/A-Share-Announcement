@@ -1,0 +1,48 @@
+# Python bytecode and build artifacts
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Tool caches and coverage output
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.pyright/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Downloaded PDFs
+/data/pdf/
+/data/cninfo_pdf/
+/data/sse_pdf/
+
+# Local editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local Claude Code files
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
+
+# Agent
+AGENTS.md
+CLAUDE.md
