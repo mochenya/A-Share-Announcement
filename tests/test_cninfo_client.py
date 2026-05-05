@@ -136,6 +136,62 @@ def test_cninfo_query_rejects_reversed_date_range(
         client.close()
 
 
+def test_cninfo_query_sleeps_between_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = CNInfoClient(verify=False)
+    pages: list[str] = []
+    delays: list[float] = []
+
+    def post_with_retry(
+        url: str,
+        *,
+        data: dict[str, str],
+        parse: Any,
+    ) -> CNInfoAnnouncementQueryResponse:
+        assert url == ANNOUNCEMENT_URL
+        pages.append(data["pageNum"])
+        return parse(
+            {
+                "totalAnnouncement": 2,
+                "announcements": [
+                    {
+                        "secCode": "000001",
+                        "secName": "Ping An Bank",
+                        "orgId": "gssz0000001",
+                        "announcementId": f"ann-{data['pageNum']}",
+                        "announcementTitle": "test",
+                        "announcementTime": 1777651200000,
+                        "adjunctUrl": f"finalpage/test-{data['pageNum']}.PDF",
+                        "pageColumn": "SZSE",
+                    }
+                ],
+                "hasMore": data["pageNum"] == "1",
+            }
+        )
+
+    monkeypatch.setattr(client, "_post_with_retry", post_with_retry)
+    monkeypatch.setattr("cninfo_announcement.client.sleep", delays.append)
+    monkeypatch.setattr(
+        "cninfo_announcement.client.DEFAULT_INTER_PAGE_DELAY_SECONDS",
+        0.2,
+    )
+
+    try:
+        result = client.query_announcements(
+            "sz",
+            searchkey="test",
+            start_date="2026-01-01",
+            end_date="2026-01-02",
+        )
+    finally:
+        client.close()
+
+    assert pages == ["1", "2"]
+    assert delays == [0.2]
+    assert result.response.total_announcement == 2
+
+
 def test_cninfo_retry_respects_retry_after(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

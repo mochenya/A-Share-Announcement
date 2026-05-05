@@ -22,6 +22,7 @@ from announcement_common.http import (
 )
 from announcement_common.models import AnnouncementSource
 from cninfo_announcement.config import (
+    DEFAULT_INTER_PAGE_DELAY_SECONDS,
     DEFAULT_LIMITS,
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT,
@@ -161,6 +162,7 @@ class CNInfoClient:
                 and len(all_announcements) >= response.totalAnnouncement
             ):
                 break
+            sleep(DEFAULT_INTER_PAGE_DELAY_SECONDS)
             page_num += 1
 
         if not raw_responses:

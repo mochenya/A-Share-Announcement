@@ -25,6 +25,7 @@ from announcement_common.http import (
 from announcement_common.models import AnnouncementSource
 from announcement_common.pdf import is_pdf_response
 from sse_announcement.config import (
+    DEFAULT_INTER_PAGE_DELAY_SECONDS,
     DEFAULT_LIMITS,
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT,
@@ -273,6 +274,7 @@ class SSEAnnouncementClient:
             # pageNo/pageCount，所以这里跟随页码。
             if not self._response_has_more_pages(response):
                 break
+            sleep(DEFAULT_INTER_PAGE_DELAY_SECONDS)
             page_no += 1
 
     def _response_has_more_pages(self, response: SSEBulletinQueryResponse) -> bool:

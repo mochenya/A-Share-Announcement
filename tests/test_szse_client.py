@@ -191,6 +191,49 @@ def test_szse_limit_marks_current_page_truncation(
     assert [item.announcement_id for item in result.items] == ["1", "2"]
 
 
+def test_szse_query_sleeps_between_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SZSEAnnouncementClient(verify=False)
+    pages: list[int] = []
+    delays: list[float] = []
+
+    def post_with_retry(
+        url: str,
+        *,
+        data: dict[str, Any],
+        parse: Any,
+    ) -> SZSEAnnouncementQueryResponse:
+        assert url == QUERY_URL
+        pages.append(data["pageNum"])
+        return parse(
+            {
+                "announceCount": 51,
+                "data": [_announcement(ann_id=data["pageNum"])],
+            }
+        )
+
+    monkeypatch.setattr(client, "_post_with_retry", post_with_retry)
+    monkeypatch.setattr("szse_announcement.client.sleep", delays.append)
+    monkeypatch.setattr(
+        "szse_announcement.client.DEFAULT_INTER_PAGE_DELAY_SECONDS",
+        0.2,
+    )
+
+    try:
+        result = client.query_announcements(
+            searchkey="test",
+            start_date="2026-04-22",
+            end_date="2026-05-04",
+        )
+    finally:
+        client.close()
+
+    assert pages == [1, 2]
+    assert delays == [0.2]
+    assert result.response.total_announcement == 2
+
+
 def test_szse_retry_respects_retry_after(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

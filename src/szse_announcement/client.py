@@ -24,6 +24,7 @@ from announcement_common.http import (
 )
 from announcement_common.models import AnnouncementSource
 from szse_announcement.config import (
+    DEFAULT_INTER_PAGE_DELAY_SECONDS,
     DEFAULT_LIMITS,
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT,
@@ -47,7 +48,6 @@ QUERY_URL = "https://www.szse.cn/api/disc/announcement/annList"
 REFERER_URL = "https://www.szse.cn/disclosure/listed/notice/index.html"
 CHANNEL_CODE = "listedNotice_disc"
 PAGE_SIZE = 50
-INTER_PAGE_DELAY_SECONDS = 0.2
 CHINA_TIMEZONE = timezone(timedelta(hours=8), name="Asia/Shanghai")
 DEFAULT_HEADERS = {
     "Accept": "application/json, text/javascript, */*; q=0.01",
@@ -165,7 +165,7 @@ class SZSEAnnouncementClient:
                 break
             if not has_more or not response.data:
                 break
-            sleep(INTER_PAGE_DELAY_SECONDS)
+            sleep(DEFAULT_INTER_PAGE_DELAY_SECONDS)
             page_num += 1
 
         if limit is not None:

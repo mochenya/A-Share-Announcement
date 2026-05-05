@@ -40,3 +40,7 @@ DEFAULT_LIMITS = httpx.Limits(
     keepalive_expiry=get_float_env("SZSE_KEEPALIVE_EXPIRY", 30.0),
 )
 DEFAULT_RETRIES = get_int_env("SZSE_RETRIES", 2)
+DEFAULT_INTER_PAGE_DELAY_SECONDS = get_float_env(
+    "SZSE_INTER_PAGE_DELAY_SECONDS",
+    0.2,
+)

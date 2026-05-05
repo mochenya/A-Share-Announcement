@@ -151,6 +151,62 @@ def test_sse_limit_uses_incremental_deduplication(
     ]
 
 
+def test_sse_query_sleeps_between_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SSEAnnouncementClient(verify=False)
+    pages: list[str] = []
+    delays: list[float] = []
+    responses = [
+        SSEBulletinQueryResponse.model_validate(
+            {
+                "pageHelp": {"pageNo": 1, "pageCount": 2, "total": 2},
+                "result": [
+                    [_main_file("/disclosure/listedinfo/announcement/c/test_1.pdf")]
+                ],
+            }
+        ),
+        SSEBulletinQueryResponse.model_validate(
+            {
+                "pageHelp": {"pageNo": 2, "pageCount": 2, "total": 2},
+                "result": [
+                    [_main_file("/disclosure/listedinfo/announcement/c/test_2.pdf")]
+                ],
+            }
+        ),
+    ]
+
+    def get_with_retry(
+        url: str,
+        *,
+        params: dict[str, str],
+        parse: Any,
+    ) -> SSEBulletinQueryResponse:
+        assert url == QUERY_URL
+        pages.append(params["pageHelp.pageNo"])
+        return responses.pop(0)
+
+    monkeypatch.setattr(client, "_get_with_retry", get_with_retry)
+    monkeypatch.setattr("sse_announcement.client.sleep", delays.append)
+    monkeypatch.setattr(
+        "sse_announcement.client.DEFAULT_INTER_PAGE_DELAY_SECONDS",
+        0.2,
+    )
+
+    try:
+        result = client.query_announcements(
+            searchkey="test",
+            start_date="2026-01-01",
+            end_date="2026-01-02",
+        )
+    finally:
+        client.close()
+
+    assert pages == ["1", "2"]
+    assert delays == [0.2]
+    assert result.response.total_announcement == 2
+
+
 def test_sse_retry_respects_retry_after(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -23,3 +23,7 @@ DEFAULT_LIMITS = httpx.Limits(
     keepalive_expiry=get_float_env("CNINFO_KEEPALIVE_EXPIRY", 5.0),
 )
 DEFAULT_RETRIES = get_int_env("CNINFO_RETRIES", 2)
+DEFAULT_INTER_PAGE_DELAY_SECONDS = get_float_env(
+    "CNINFO_INTER_PAGE_DELAY_SECONDS",
+    0.2,
+)
