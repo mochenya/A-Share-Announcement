@@ -7,7 +7,12 @@ import httpx
 import pytest
 
 from announcement_common.models import AnnouncementSource
-from cninfo_announcement.client import ANNOUNCEMENT_URL, TOP_SEARCH_URL, CNInfoClient
+from cninfo_announcement.client import (
+    ANNOUNCEMENT_URL,
+    TOP_SEARCH_URL,
+    CNInfoClient,
+    CNInfoError,
+)
 from cninfo_announcement.models import CNInfoAnnouncementQueryResponse
 
 
@@ -132,6 +137,77 @@ def test_cninfo_query_rejects_reversed_date_range(
                 start_date="2026-01-05",
                 end_date="2026-01-02",
             )
+    finally:
+        client.close()
+
+
+def test_cninfo_resolve_stock_keeps_pre_resolved_stock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = CNInfoClient(verify=False)
+
+    def post_with_retry(**_kwargs: Any) -> None:
+        pytest.fail("CNInfo topSearch should not be called for resolved stock")
+
+    monkeypatch.setattr(client, "_post_with_retry", post_with_retry)
+
+    try:
+        assert client._resolve_stock("sz", "000001,gssz0000001") == (
+            "000001,gssz0000001"
+        )
+    finally:
+        client.close()
+
+
+def test_cninfo_resolve_stock_rejects_missing_exact_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = CNInfoClient(verify=False)
+
+    def post_with_retry(
+        url: str,
+        *,
+        data: dict[str, str],
+        parse: Any,
+    ) -> list[Any]:
+        assert url == TOP_SEARCH_URL
+        assert data == {"keyWord": "000001", "maxNum": "10", "plate": "szsh"}
+        return parse([{"code": "000002", "orgId": "gssz0000002"}])
+
+    monkeypatch.setattr(client, "_post_with_retry", post_with_retry)
+
+    try:
+        with pytest.raises(CNInfoError, match="Unable to resolve stock code: 000001"):
+            client._resolve_stock("sz", "000001")
+    finally:
+        client.close()
+
+
+def test_cninfo_resolve_stock_rejects_ambiguous_org_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = CNInfoClient(verify=False)
+
+    def post_with_retry(
+        url: str,
+        *,
+        data: dict[str, str],
+        parse: Any,
+    ) -> list[Any]:
+        assert url == TOP_SEARCH_URL
+        assert data == {"keyWord": "000001", "maxNum": "10", "plate": "szsh"}
+        return parse(
+            [
+                {"code": "000001", "orgId": "gssz0000001"},
+                {"code": "000001", "orgId": "gssz0000001-alt"},
+            ]
+        )
+
+    monkeypatch.setattr(client, "_post_with_retry", post_with_retry)
+
+    try:
+        with pytest.raises(CNInfoError, match="Stock code resolved ambiguously: 000001"):
+            client._resolve_stock("sz", "000001")
     finally:
         client.close()
 

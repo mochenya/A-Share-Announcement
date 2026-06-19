@@ -131,6 +131,20 @@ def test_szse_query_rejects_empty_search_conditions() -> None:
         client.close()
 
 
+def test_szse_query_rejects_non_positive_limit() -> None:
+    client = SZSEAnnouncementClient(verify=False)
+    try:
+        with pytest.raises(ValueError, match="limit must be greater than 0"):
+            client.query_announcements(
+                searchkey="增持",
+                start_date="2026-04-22",
+                end_date="2026-05-04",
+                limit=0,
+            )
+    finally:
+        client.close()
+
+
 def test_szse_query_rejects_reversed_date_range(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -150,6 +164,44 @@ def test_szse_query_rejects_reversed_date_range(
             )
     finally:
         client.close()
+
+
+def test_szse_query_deduplicates_announcements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SZSEAnnouncementClient(verify=False)
+
+    def post_with_retry(
+        _url: str,
+        *,
+        data: dict[str, Any],
+        parse: Any,
+    ) -> SZSEAnnouncementQueryResponse:
+        assert data["pageNum"] == 1
+        return parse(
+            {
+                "announceCount": 3,
+                "data": [
+                    _announcement(ann_id=1, title="公告一"),
+                    _announcement(ann_id=1, title="公告一重复"),
+                    _announcement(ann_id=2, title="公告二"),
+                ],
+            }
+        )
+
+    monkeypatch.setattr(client, "_post_with_retry", post_with_retry)
+    try:
+        result = client.query_announcements(
+            searchkey="公告",
+            start_date="2026-04-22",
+            end_date="2026-05-04",
+        )
+    finally:
+        client.close()
+
+    assert result.response.total_announcement == 2
+    assert [item.announcement_id for item in result.items] == ["1", "2"]
+    assert [item.announcement_title for item in result.items] == ["公告一", "公告二"]
 
 
 def test_szse_limit_marks_current_page_truncation(
@@ -189,6 +241,42 @@ def test_szse_limit_marks_current_page_truncation(
     assert result.response.total_announcement == 2
     assert result.response.has_more is True
     assert [item.announcement_id for item in result.items] == ["1", "2"]
+
+
+def test_szse_limit_marks_following_page_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SZSEAnnouncementClient(verify=False)
+
+    def post_with_retry(
+        _url: str,
+        *,
+        data: dict[str, Any],
+        parse: Any,
+    ) -> SZSEAnnouncementQueryResponse:
+        assert data["pageNum"] == 1
+        return parse(
+            {
+                "announceCount": 51,
+                "data": [_announcement(ann_id=index) for index in range(1, 51)],
+            }
+        )
+
+    monkeypatch.setattr(client, "_post_with_retry", post_with_retry)
+    try:
+        result = client.query_announcements(
+            searchkey="公告",
+            start_date="2026-04-22",
+            end_date="2026-05-04",
+            limit=50,
+        )
+    finally:
+        client.close()
+
+    assert result.response.total_announcement == 50
+    assert result.response.has_more is True
+    assert result.items[0].announcement_id == "1"
+    assert result.items[-1].announcement_id == "50"
 
 
 def test_szse_query_sleeps_between_pages(
